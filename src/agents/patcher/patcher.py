@@ -7,6 +7,7 @@ from src.socket_instance import emit_agent
 
 from src.config import Config
 from src.llm import LLM
+from src.logger import Logger
 from src.state import AgentState
 from src.services.utils import retry_wrapper
 
@@ -16,7 +17,7 @@ class Patcher:
     def __init__(self, base_model: str):
         config = Config()
         self.project_dir = config.get_projects_dir()
-        
+        self.logger = Logger()
         self.llm = LLM(model_id=base_model)
 
     def render(
@@ -40,8 +41,14 @@ class Patcher:
     def validate_response(self, response: str) -> Union[List[Dict[str, str]], bool]:
         response = response.strip()
 
-        response = response.split("~~~", 1)[1]
-        response = response[:response.rfind("~~~")]
+        if "~~~" in response:
+            response = response.split("~~~", 1)[1]
+            response = response[:response.rfind("~~~")]
+        elif "---" in response:
+            response = response.split("---", 1)[1]
+            response = response[:response.rfind("---")]
+        else:
+            self.logger.error("Invalid response format, expected '~~~' or '---' delimiters.")
         response = response.strip()
 
         result = []
@@ -74,10 +81,10 @@ class Patcher:
             file_path = os.path.join(self.project_dir, project_name, file['file'])
             file_path_dir = os.path.dirname(file_path)
             os.makedirs(file_path_dir, exist_ok=True)
-    
+
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(file["code"])
-    
+
         return file_path_dir
     def get_project_path(self, project_name: str):
         project_name = project_name.lower().replace(" ", "-")
@@ -127,12 +134,12 @@ class Patcher:
             system_os
         )
         response = self.llm.inference(prompt, project_name)
-        
+
         valid_response = self.validate_response(response)
-        
+
         if not valid_response:
             return False
-        
+
         self.emulate_code_writing(valid_response, project_name)
 
         return valid_response

@@ -12,6 +12,7 @@ GOOGLE_SEARCH = "<YOUR_GOOGLE_SEARCH_API_KEY>"
 GOOGLE_SEARCH_ENGINE_ID = "<YOUR_GOOGLE_SEARCH_ENGINE_ID>"
 CLAUDE = "<YOUR_CLAUDE_API_KEY>"
 OPENAI = "<YOUR_OPENAI_API_KEY>"
+METASO = "<YOUR_OPENAI_API_KEY>"
 GEMINI = "<YOUR_GEMINI_API_KEY>"
 MISTRAL = "<YOUR_MISTRAL_API_KEY>"
 GROQ = "<YOUR_GROQ_API_KEY>"
@@ -24,6 +25,7 @@ OLLAMA = "http://127.0.0.1:11434"
 
 LM_STUDIO = "http://localhost:1234/v1"
 OPENAI = "https://api.openai.com/v1"
+METASO = "https://metaso.cn/api/v1/chat/completions"
 
 
 [LOGGING]
@@ -31,4 +33,16 @@ LOG_REST_API = "true"
 LOG_PROMPTS = "false"
 
 [TIMEOUT]
-INFERENCE = 60
+INFERENCE = 180
+
+[PROXY]
+HTTP_PROXY = "<YOUR_HTTP_PROXY>"
+HTTPS_PROXY = "<YOUR_HTTP_PROXY>"
+NO_PROXY = "localhost,127.0.0.1,.metaso.cn"
+
+[WEB_SEARCH]
+NO_SITES = "stackoverflow.com,reddit.com,github.com,gitlab.com,bitbucket.org,sourceforge.net,codeberg.org,launchpad.net,dev.to,medium.com,hashnode.com,youtube.com"
+
+[FEATURES]
+# disable it if your network in China
+ENABLE_KEYWORD_EXTRACTION = "true"

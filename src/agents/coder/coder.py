@@ -36,11 +36,14 @@ class Coder:
 
         self.logger.debug(f"Response from the model: {response}")
 
-        if "~~~" not in response:
-            return False
-
-        response = response.split("~~~", 1)[1]
-        response = response[:response.rfind("~~~")]
+        if "~~~" in response:
+            response = response.split("~~~", 1)[1]
+            response = response[:response.rfind("~~~")]
+        elif "---" in response:
+            response = response.split("---", 1)[1]
+            response = response[:response.rfind("---")]
+        else:
+            self.logger.error("Invalid response format, expected '~~~' or '---' delimiters.")
         response = response.strip()
 
         result = []
@@ -70,13 +73,13 @@ class Coder:
         project_name = project_name.lower().replace(" ", "-")
 
         for file in response:
-            file_path = os.path.join(self.project_dir, project_name, file['file'])
+            file_path = os.path.join(self.project_dir, project_name, file['file'].replace('`', '').strip())
             file_path_dir = os.path.dirname(file_path)
             os.makedirs(file_path_dir, exist_ok=True)
-    
+
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(file["code"])
-        
+
         return file_path_dir
 
     def get_project_path(self, project_name: str):
@@ -121,14 +124,14 @@ class Coder:
     ) -> str:
         prompt = self.render(step_by_step_plan, user_context, search_results)
         response = self.llm.inference(prompt, project_name)
-        
+
         valid_response = self.validate_response(response)
-        
+
         if not valid_response:
             return False
-        
+
         print(valid_response)
-        
+
         self.emulate_code_writing(valid_response, project_name)
 
         return valid_response

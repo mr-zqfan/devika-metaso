@@ -13,6 +13,13 @@ from src.state import AgentState
 
 class Browser:
     def __init__(self):
+        if 'http_proxy' in os.environ:
+            self._proxy = {'server': os.environ['http_proxy']}
+        elif 'HTTP_PROXY' in os.environ:
+            self._proxy = {'server': os.environ['HTTP_PROXY']}
+        else:
+            self._proxy = None
+
         self.playwright = None
         self.browser = None
         self.page = None
@@ -20,7 +27,7 @@ class Browser:
 
     async def start(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
+        self.browser = await self.playwright.chromium.launch(headless=True, proxy=self._proxy)
         self.page = await self.browser.new_page()
         return self
 

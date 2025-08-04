@@ -8,7 +8,7 @@ from src.socket_instance import emit_agent
 
 def retry_wrapper(func):
     def wrapper(*args, **kwargs):
-        max_tries = 5
+        max_tries = 2
         tries = 0
         while tries < max_tries:
             result = func(*args, **kwargs)
@@ -18,14 +18,14 @@ def retry_wrapper(func):
             emit_agent("info", {"type": "warning", "message": "Invalid response from the model, trying again..."})
             tries += 1
             time.sleep(2)
-        print("Maximum 5 attempts reached. try other models")
+        print(f"Maximum {max_tries} attempts reached. try other models")
         emit_agent("info", {"type": "error", "message": "Maximum attempts reached. model keeps failing."})
         sys.exit(1)
 
         return False
     return wrapper
 
-        
+
 class InvalidResponseError(Exception):
     pass
 

@@ -14,10 +14,11 @@ from .decision import Decision
 from src.project import ProjectManager
 from src.state import AgentState
 from src.logger import Logger
+from src.config import Config
 
 from src.bert.sentence import SentenceBert
 from src.memory import KnowledgeBase
-from src.browser.search import BingSearch, GoogleSearch, DuckDuckGoSearch
+from src.browser.search import MetasoSearch, BingSearch, GoogleSearch, DuckDuckGoSearch
 from src.browser import Browser
 from src.browser import start_interaction
 from src.filesystem import ReadCode
@@ -29,6 +30,8 @@ import time
 import platform
 import tiktoken
 import asyncio
+import grequests
+import threading
 
 from src.socket_instance import emit_agent
 
@@ -48,6 +51,7 @@ class Agent:
         """
         Agents
         """
+        self.base_model = base_model
         self.planner = Planner(base_model=base_model)
         self.researcher = Researcher(base_model=base_model)
         self.formatter = Formatter(base_model=base_model)
@@ -79,9 +83,11 @@ class Agent:
     def search_queries(self, queries: list, project_name: str) -> dict:
         results = {}
 
-        knowledge_base = KnowledgeBase()
+        # knowledge_base = KnowledgeBase()
 
-        if self.engine == "bing":
+        if self.engine == "metaso":
+            web_search = MetasoSearch()
+        elif self.engine == "bing":
             web_search = BingSearch()
         elif self.engine == "google":
             web_search = GoogleSearch()
@@ -90,38 +96,103 @@ class Agent:
 
         self.logger.info(f"\nSearch Engine :: {self.engine}")
 
-        for query in queries:
-            query = query.strip().lower()
+        if self.engine == "metaso":
+            reqs = []
+            for query in queries:
+                query = query.strip().lower()
+                reqs.append(web_search.search(query))
 
-            # knowledge = knowledge_base.get_knowledge(tag=query)
-            # if knowledge:
-            #     results[query] = knowledge
-            #     continue
-
+            ress = grequests.map(reqs)
+            for i, res in enumerate(ress):
+                data = res.json().get("answer", "").strip() if res.status_code == 200 else f"Error: {res.status_code} - {res.text}"
+                query = queries[i]
+                # results[query] = self.formatter.execute(data, project_name)
+                results[query] = data
+                self.logger.info(f"got the search results for : {query}")
+        else:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            async def search_query():
+                links = []
+                for query in queries:
+                    query = query.strip().lower()
+                    web_search.search(query)
 
-            web_search.search(query)
+                    link = web_search.get_first_link()
+                    print("\nLink :: ", link, '\n')
+                    if not link:
+                        print(f"No link found for query: {query}")
+                        continue
+                    links.append((query, link))
 
-            link = web_search.get_first_link()
-            print("\nLink :: ", link, '\n')
-            if not link:
-                continue
-            browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
-            emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
-            results[query] = self.formatter.execute(data, project_name)
+                tasks = []
+                async def open_page_task(query, link):
+                    browser, raw, data = await self.open_page(project_name, link)
+                    return query, raw, data
 
-            self.logger.info(f"got the search results for : {query}")
-            # knowledge_base.add_knowledge(tag=query, contents=results[query])
+                async with asyncio.TaskGroup() as tg:
+                    for query, link in links:
+                        tasks.append(tg.create_task(open_page_task(query, link)))
+
+                task_results = await asyncio.gather(*tasks)
+                for query, raw, data in task_results:
+                    emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
+
+                    results[query] = data
+                    self.logger.info(f"got the search results for : {query}")
+
+            loop.run_until_complete(search_query())
+
+            tasks = []
+            for k in list(results.keys()):
+                if results[k] is None or results[k] == "":
+                    self.logger.warning(f"No data found for query: {k}")
+                    results.pop(k)
+
+                task = threading.Thread(target=self.formatter.execute, args=(results[k], project_name), daemon=True)
+                task.start()
+                tasks.append(task)
+
+            for task in tasks:
+                task.join()
+
+
+            #  for query in queries:
+            #      query = query.strip().lower()
+            #
+            #      # knowledge = knowledge_base.get_knowledge(tag=query)
+            #      # if knowledge:
+            #      #     results[query] = knowledge
+            #      #     continue
+            #
+            #      loop = asyncio.new_event_loop()
+            #      asyncio.set_event_loop(loop)
+            #
+            #      web_search.search(query)
+            #
+            #      link = web_search.get_first_link()
+            #      print("\nLink :: ", link, '\n')
+            #      if not link:
+            #          continue
+            #      browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
+            #      emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
+            #
+            #      results[query] = self.formatter.execute(data, project_name)
+            #
+            #      self.logger.info(f"got the search results for : {query}")
+            #      # knowledge_base.add_knowledge(tag=query, contents=results[query])
         return results
 
     def update_contextual_keywords(self, sentence: str):
         """
             Update the context keywords with the latest sentence/prompt
         """
-        keywords = SentenceBert(sentence).extract_keywords()
-        for keyword in keywords:
-            self.collected_context_keywords.append(keyword[0])
+        if Config().get_features_enable_keyword_extraction():
+            keywords = SentenceBert(sentence).extract_keywords()
+            for keyword in keywords:
+                self.collected_context_keywords.append(keyword[0])
+        else:
+            self.collected_context_keywords = []
 
         return self.collected_context_keywords
 
@@ -342,9 +413,12 @@ class Agent:
 
         if queries and len(queries) > 0:
             search_results = self.search_queries(queries, project_name)
-
+            if not search_results:
+                self.project_manager.add_message_from_devika(project_name, "Task field: not enough search results found.")
+                return
         else:
             search_results = {}
+
 
         code = self.coder.execute(
             step_by_step_plan=plan,

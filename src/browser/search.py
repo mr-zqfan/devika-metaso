@@ -1,10 +1,52 @@
-import requests
-from src.config import Config
 
+import logging
 import re
 from urllib.parse import unquote
 from html import unescape
 import orjson
+import requests
+import grequests
+
+from src.config import Config
+
+LOGGER = logging.getLogger(__name__)
+
+
+def is_no_sites_url(url):
+    """Check if the URL is in the no_sites list."""
+    for site in Config().get_web_search_no_sites():
+        if site in url:
+            LOGGER.debug(f"URL {url} is in no_sites list: {site}")
+            return True
+    return False
+
+
+class MetasoSearch:
+    """本引擎直接给出结果"""
+    def __init__(self):
+        config = Config()
+        self.api_key = config.get_metaso_api_key()
+        self.base_url = config.get_metaso_api_base_url()
+
+    def search(self, query):
+        LOGGER.debug(f"no use proxy for metaso search")
+        return grequests.post(
+            self.base_url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            },
+            json={
+                "q": query.strip(),
+                "model": "fast",
+                "format": "simple",
+                "conciseSnippet": True,
+            },
+            timeout=180)
+
+    def get_first_link(self):
+        raise NotImplementedError("MetasoSearch does not support get_first_link method. Use inference method instead.")
 
 
 class BingSearch:
@@ -27,7 +69,16 @@ class BingSearch:
             return error
 
     def get_first_link(self):
-        return self.query_result["webPages"]["value"][0]["url"]
+        item = ''
+        if self.query_result is None or "webPages" not in self.query_result or "value" not in self.query_result["webPages"]:
+            LOGGER.error("No web pages found in Bing search result.")
+            return item
+
+        for i in range(len(self.query_result["webPages"]["value"])):
+            item = self.query_result["webPages"]["value"][i]["url"]
+            if not is_no_sites_url(item):
+                return item
+        return item
 
 
 class GoogleSearch:
@@ -55,8 +106,15 @@ class GoogleSearch:
     def get_first_link(self):
         item = ""
         try:
+            # if 'items' in self.query_result:
+            #     item = self.query_result['items'][0]['link']
+            # return item
             if 'items' in self.query_result:
-                item = self.query_result['items'][0]['link']
+                for i in range(len(self.query_result['items'])):
+                    item = self.query_result['items'][i]['link']
+                    if not is_no_sites_url(item):
+                        return item
+
             return item
         except Exception as error:
             print(error)
@@ -136,7 +194,12 @@ class DuckDuckGoSearch:
         self.duck(query)
 
     def get_first_link(self):
-        return self.query_result[0]["href"]
+        item = ''
+        for i in range(len(self.query_result)):
+            item = self.query_result[i]['href']
+            if not is_no_sites_url(item):
+                return item
+        return item
 
     @staticmethod
     def extract_vqd(html_bytes: bytes) -> str:

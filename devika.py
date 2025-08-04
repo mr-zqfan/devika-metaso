@@ -30,7 +30,7 @@ CORS(app, resources={r"/*": {"origins": # Change the origin to your frontend URL
                              [
                                  "https://localhost:3000",
                                  "http://localhost:3000",
-                                 ]}}) 
+                                 ]}})
 app.register_blueprint(project_bp)
 socketio.init_app(app)
 
@@ -61,7 +61,7 @@ def test_connect(data):
 def data():
     project = manager.get_project_list()
     models = LLM().list_models()
-    search_engines = ["Bing", "Google", "DuckDuckGo"]
+    search_engines = ["Metaso", "Bing", "Google", "DuckDuckGo"]
     return jsonify({"projects": project, "models": models, "search_engines": search_engines})
 
 
